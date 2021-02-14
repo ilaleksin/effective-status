@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"net/http"
 	"runtime/debug"
@@ -40,5 +41,18 @@ func LoggingMiddleware(logger *log.Logger) Middleware {
 			logger.Println(r.Method, r.URL.EscapedPath(), "status", wrapper.Status, "response time", time.Since(start))
 		}
 		return http.HandlerFunc(fn)
+	}
+}
+
+type ErrorHandler func(http.ResponseWriter, *http.Request) error
+
+func (logicFunc ErrorHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	err := logicFunc(w, r)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/problem+json")
+		w.WriteHeader(http.StatusInternalServerError)
+		resp := []byte(fmt.Sprintf(`{"error": "%v"}`, err.Error()))
+		w.Write(resp)
+		return
 	}
 }
