@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <!-- <link rel="shortcut icon" href="favicon.png" type="image/png"> -->
+    <title>A Meaningful Board Title</title>
+</head>
+<body>
+    <h1>Service Status Board</h1>
+    {{range .}}
+        <li><b>{{ .Name }} {{.Status}}
+            <a href= "http://localhost:9091/services/{{ .Name }}">{{ .Name }}</a>
+            {{if eq .Status 0}}Operational
+            {{else if eq .Status 1}}Degraded
+            {{else if eq .Status 2}}Unavailable
+            {{else if eq .Status 3}}Unknown State
+            {{- end}}
+        </b></li>
+    {{- end}}
+</body>
+</html>
