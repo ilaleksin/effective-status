@@ -17,10 +17,12 @@ import (
 	_ "github.com/lib/pq"
 )
 
-type Env struct {
+type env struct {
 	services interface {
 		All() ([]model.Service, error)
 		Create(model.Service) (int, error)
+		Get(string) (model.Service, error)
+		Delete(string) (bool, error)
 	}
 }
 
@@ -61,11 +63,11 @@ func setError(w http.ResponseWriter, err string, statuscode int) {
 	return
 }
 
-func (api Env) getServiceBoard(w http.ResponseWriter, r *http.Request) error {
+func (api env) getServiceBoard(w http.ResponseWriter, r *http.Request) error {
 	//var serviceSummary []Service
 	services, err := api.services.All()
 	if err != nil {
-		httpErr := fmt.Sprintf("Database connection error: ", err.Error())
+		httpErr := fmt.Sprint("Database connection error:", err.Error())
 		http.Error(w, httpErr, http.StatusInternalServerError)
 		return err
 	}
@@ -74,7 +76,7 @@ func (api Env) getServiceBoard(w http.ResponseWriter, r *http.Request) error {
 	// }
 	resp, err := json.Marshal(services)
 	if err != nil {
-		errMessage := fmt.Sprintf("Failed to parse health checks of services", err)
+		errMessage := fmt.Sprint("Failed to parse the list of services:", err)
 		http.Error(w, errMessage, http.StatusInternalServerError)
 		return err
 	}
@@ -84,13 +86,20 @@ func (api Env) getServiceBoard(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-func (api Env) CreateService(w http.ResponseWriter, r *http.Request) error {
-	var newService Service
+func (api env) createService(w http.ResponseWriter, r *http.Request) error {
+	var newService model.Service
 	err := json.NewDecoder(r.Body).Decode(&newService)
 	if err != nil {
 		return err
 	}
-
+	id, err := api.services.Create(newService)
+	if err != nil {
+		return err
+	}
+	w.WriteHeader(http.StatusCreated)
+	w.Header().Set("Content-Type", "application/json")
+	resp := fmt.Sprintf(`{"id": "%d"}`, id)
+	fmt.Fprint(w, resp)
 	return nil
 }
 
@@ -101,9 +110,23 @@ func getServiceBoard(w http.ResponseWriter, r *http.Request) error {
 	}
 	resp, err := json.Marshal(serviceSummary)
 	if err == nil {
-		newErr := fmt.Errorf("Failed to parse health checks of services", err)
+		newErr := fmt.Errorf("Failed to parse health checks of services %v", err)
 		return newErr
 	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	w.Write(resp)
+	return nil
+}
+
+func (api env) getService(w http.ResponseWriter, r *http.Request) error {
+	vars := mux.Vars(r)
+	serviceName := vars["service"]
+	service, err := api.services.Get(serviceName)
+	if err != nil {
+		return err
+	}
+	resp, err := json.Marshal(service)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	w.Write(resp)
@@ -199,22 +222,23 @@ func main() {
 	logger := log.New(mw, "Logger bruh: ", log.Ldate|log.Lshortfile)
 	logMdlw := LoggingMiddleware(logger)
 
-	db, err := sql.Open("postgres", "postgres:5arpdtoc@localhost:5432/status_page?sslmode=disable")
+	db, err := sql.Open("postgres", "postgres://postgres:5arpdtoc@localhost:5432/status_page?sslmode=disable")
+	//postgres://{user}:{password}@{hostname}:{port}/{database-name}?sslmode=disable
 	if err != nil {
 		logger.Fatal(err)
 	}
-	env := Env{
+	envHolder := env{
 		services: model.ServiceDB{DB: db},
 	}
 	router := mux.NewRouter()
 
 	router.HandleFunc("/", initAction).Methods("GET")
 	//router.Handle("/board", ErrorHandler(getServiceBoard)).Methods("GET")
-	router.Handle("/board", ErrorHandler(env.getServiceBoard)).Methods("GET")
+	router.Handle("/board", ErrorHandler(envHolder.getServiceBoard)).Methods("GET")
 	router.HandleFunc("/check", updateService).Methods("PATCH")
-	router.HandleFunc("/services/{service}", getServiceHealth).Methods("GET")
-	//router.HandleFunc("/service/{service}")
-	// router.HandleFunc("/service")
+	router.Handle("/services/{service}", ErrorHandler(envHolder.getService)).Methods("GET", "PUT", "DELETE")
+	router.Handle("/services", ErrorHandler(envHolder.createService)).Methods("POST")
+	//router.Handle("/service/{service}")
 
 	finalMux := logMdlw(router)
 	http.ListenAndServe(":9091", finalMux)

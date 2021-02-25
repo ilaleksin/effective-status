@@ -51,7 +51,7 @@ func (logicFunc ErrorHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 	if err != nil {
 		w.Header().Set("Content-Type", "application/problem+json")
 		w.WriteHeader(http.StatusInternalServerError)
-		resp := []byte(fmt.Sprintf(`{"error": "%v"}`, err.Error()))
+		resp := []byte(fmt.Sprintf(`{"error": %q}`, err.Error()))
 		w.Write(resp)
 		return
 	}

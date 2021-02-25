@@ -3,6 +3,7 @@ package model
 import (
 	"database/sql"
 	"fmt"
+	"log"
 )
 
 type Service struct {
@@ -59,9 +60,35 @@ func (svc ServiceDB) Create(service Service) (int, error) {
 	id := 0
 	err := svc.DB.QueryRow(sqlStatement, service.Name, service.Status, service.ParentID).Scan(&id)
 	if err != nil {
+		log.Println(err.Error())
 		return id, err
 	}
 	return id, nil
+}
+
+func (svc ServiceDB) Get(title string) (Service, error) {
+	var service Service
+	sqlStatement := `SELECT * FROM public.service WHERE name=$1`
+	err := svc.DB.QueryRow(sqlStatement, title).Scan(&service.ID, &service.Name, &service.Status, &service.ParentID)
+	if err != nil {
+		log.Println(err.Error())
+		return service, err
+	}
+	return service, nil
+}
+
+func (svc ServiceDB) Delete(title string) (bool, error) {
+	sqlStatement := `DELETE FROM public.service WHERE name=$1`
+	res, err := svc.DB.Exec(sqlStatement, title)
+	if err != nil {
+		log.Println(err.Error())
+		return false, err
+	}
+	rows, err := res.RowsAffected()
+	if rows != 0 {
+		return true, err
+	}
+	return false, err
 }
 
 type HealthCheck struct {
