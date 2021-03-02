@@ -21,8 +21,14 @@ type env struct {
 	services interface {
 		All() ([]model.Service, error)
 		Create(model.Service) (int, error)
+		Update(string, model.Service) (bool, error)
 		Get(string) (model.Service, error)
 		Delete(string) (bool, error)
+	}
+	deps interface {
+		Get(string) ([]model.Dependency, error)
+		Create(model.Dependency) (int, error)
+		Delete(int) (bool, error)
 	}
 }
 
@@ -63,43 +69,39 @@ func setError(w http.ResponseWriter, err string, statuscode int) {
 	return
 }
 
-func (api env) getServiceBoard(w http.ResponseWriter, r *http.Request) error {
-	//var serviceSummary []Service
-	services, err := api.services.All()
-	if err != nil {
-		httpErr := fmt.Sprint("Database connection error:", err.Error())
-		http.Error(w, httpErr, http.StatusInternalServerError)
-		return err
+func (api env) processServices(w http.ResponseWriter, r *http.Request) error {
+	if r.Method == http.MethodPost {
+		var newService model.Service
+		err := json.NewDecoder(r.Body).Decode(&newService)
+		if err != nil {
+			return err
+		}
+		id, err := api.services.Create(newService)
+		if err != nil {
+			return err
+		}
+		w.Header().Set("Content-Type", "application/json")
+		resp := fmt.Sprintf(`{"id": "%d"}`, id)
+		fmt.Fprint(w, resp)
+		w.WriteHeader(http.StatusCreated)
 	}
-	// for _, service := range services {
-	// 	serviceSummary = append(serviceSummary, service.GetShortService())
-	// }
-	resp, err := json.Marshal(services)
-	if err != nil {
-		errMessage := fmt.Sprint("Failed to parse the list of services:", err)
-		http.Error(w, errMessage, http.StatusInternalServerError)
-		return err
+	if r.Method == http.MethodGet {
+		services, err := api.services.All()
+		if err != nil {
+			httpErr := fmt.Sprint("Database connection error:", err.Error())
+			http.Error(w, httpErr, http.StatusInternalServerError)
+			return err
+		}
+		resp, err := json.Marshal(services)
+		if err != nil {
+			errMessage := fmt.Sprint("Failed to parse the list of services:", err)
+			http.Error(w, errMessage, http.StatusInternalServerError)
+			return err
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(resp)
+		w.WriteHeader(http.StatusOK)
 	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	w.Write(resp)
-	return nil
-}
-
-func (api env) createService(w http.ResponseWriter, r *http.Request) error {
-	var newService model.Service
-	err := json.NewDecoder(r.Body).Decode(&newService)
-	if err != nil {
-		return err
-	}
-	id, err := api.services.Create(newService)
-	if err != nil {
-		return err
-	}
-	w.WriteHeader(http.StatusCreated)
-	w.Header().Set("Content-Type", "application/json")
-	resp := fmt.Sprintf(`{"id": "%d"}`, id)
-	fmt.Fprint(w, resp)
 	return nil
 }
 
@@ -119,17 +121,43 @@ func getServiceBoard(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-func (api env) getService(w http.ResponseWriter, r *http.Request) error {
+func (api env) processServiceEndpoint(w http.ResponseWriter, r *http.Request) error {
 	vars := mux.Vars(r)
 	serviceName := vars["service"]
-	service, err := api.services.Get(serviceName)
-	if err != nil {
-		return err
+	if r.Method == "GET" {
+		service, err := api.services.Get(serviceName)
+		if err != nil {
+			return err
+		}
+		resp, err := json.Marshal(service)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write(resp)
+	} else if r.Method == "PUT" {
+		var newService model.Service
+		err := json.NewDecoder(r.Body).Decode(&newService)
+		if err != nil {
+			err = fmt.Errorf("Failed to read request body: %v", err.Error())
+			return err
+		}
+		updated, err := api.services.Update(serviceName, newService)
+		if err != nil {
+			return err
+		}
+		if !updated {
+			err := fmt.Errorf("Failed to update record for service %v, request body: %v", serviceName, newService)
+			return err
+		}
+	} else if r.Method == "DELETE" {
+		deleted, err := api.services.Delete(serviceName)
+		if err != nil {
+			return err
+		}
+		if !deleted {
+			err := fmt.Errorf("Failed to delete record for service %v", serviceName)
+			return err
+		}
 	}
-	resp, err := json.Marshal(service)
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	w.Write(resp)
 	return nil
 }
 
@@ -234,12 +262,11 @@ func main() {
 
 	router.HandleFunc("/", initAction).Methods("GET")
 	//router.Handle("/board", ErrorHandler(getServiceBoard)).Methods("GET")
-	router.Handle("/board", ErrorHandler(envHolder.getServiceBoard)).Methods("GET")
+	//router.Handle("/board", ErrorHandler(envHolder.getServiceBoard)).Methods("GET")
 	router.HandleFunc("/check", updateService).Methods("PATCH")
-	router.Handle("/services/{service}", ErrorHandler(envHolder.getService)).Methods("GET", "PUT", "DELETE")
-	router.Handle("/services", ErrorHandler(envHolder.createService)).Methods("POST")
-	//router.Handle("/service/{service}")
-
+	router.Handle("/services/{service}", ErrorHandler(envHolder.processServiceEndpoint)).Methods("GET", "PUT", "DELETE")
+	router.Handle("/services", ErrorHandler(envHolder.processServices)).Methods("GET", "POST")
+	router.Handle("/dependencies", ErrorHandler(envHolder.processServices)).Methods("GET", "POST", "DELETE")
 	finalMux := logMdlw(router)
 	http.ListenAndServe(":9091", finalMux)
 }
