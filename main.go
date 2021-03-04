@@ -250,7 +250,7 @@ func main() {
 	logger := log.New(mw, "Logger bruh: ", log.Ldate|log.Lshortfile)
 	logMdlw := LoggingMiddleware(logger)
 
-	db, err := sql.Open("postgres", "postgres://postgres:5arpdtoc@localhost:5432/status_page?sslmode=disable")
+	db, err := sql.Open("postgres", "postgres://postgres:paswd@localhost:5432/status_page?sslmode=disable")
 	//postgres://{user}:{password}@{hostname}:{port}/{database-name}?sslmode=disable
 	if err != nil {
 		logger.Fatal(err)
