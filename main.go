@@ -66,43 +66,42 @@ func setError(w http.ResponseWriter, err string, statuscode int) {
 	w.Header().Set("Content-Type", "application/problem+json")
 	w.WriteHeader(statuscode)
 	w.Write(resp)
-	return
 }
 
-func (api env) processServices(w http.ResponseWriter, r *http.Request) error {
-	if r.Method == http.MethodPost {
-		var newService model.Service
-		err := json.NewDecoder(r.Body).Decode(&newService)
-		if err != nil {
-			return err
-		}
-		id, err := api.services.Create(newService)
-		if err != nil {
-			return err
-		}
-		w.Header().Set("Content-Type", "application/json")
-		resp := fmt.Sprintf(`{"id": "%d"}`, id)
-		fmt.Fprint(w, resp)
-		w.WriteHeader(http.StatusCreated)
+func (api env) createService(w http.ResponseWriter, r *http.Request) error {
+	var newService model.Service
+	err := json.NewDecoder(r.Body).Decode(&newService)
+	if err != nil {
+		return err
 	}
-	if r.Method == http.MethodGet {
-		services, err := api.services.All()
-		if err != nil {
-			httpErr := fmt.Sprint("Database connection error:", err.Error())
-			http.Error(w, httpErr, http.StatusInternalServerError)
-			return err
-		}
-		resp, err := json.Marshal(services)
-		if err != nil {
-			errMessage := fmt.Sprint("Failed to parse the list of services:", err)
-			http.Error(w, errMessage, http.StatusInternalServerError)
-			return err
-		}
-		w.Header().Set("Content-Type", "application/json")
-		w.Write(resp)
-		w.WriteHeader(http.StatusOK)
+	id, err := api.services.Create(newService)
+	if err != nil {
+		return err
 	}
+	w.Header().Set("Content-Type", "application/json")
+	resp := fmt.Sprintf(`{"id": "%d"}`, id)
+	fmt.Fprint(w, resp)
+	w.WriteHeader(http.StatusCreated)
 	return nil
+}
+
+func (api env) getServices(w http.ResponseWriter, r *http.Request) error {
+	services, err := api.services.All()
+	if err != nil {
+		httpErr := fmt.Sprint("Database connection error:", err.Error())
+		http.Error(w, httpErr, http.StatusInternalServerError)
+		return err
+	}
+	resp, err := json.Marshal(services)
+	if err != nil {
+		errMessage := fmt.Sprint("Failed to parse the list of services:", err)
+		http.Error(w, errMessage, http.StatusInternalServerError)
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(resp)
+	w.WriteHeader(http.StatusOK)
+	return err
 }
 
 func getServiceBoard(w http.ResponseWriter, r *http.Request) error {
@@ -226,7 +225,6 @@ func updateService(w http.ResponseWriter, r *http.Request) {
 	}
 	w.WriteHeader(http.StatusAccepted)
 	w.Write([]byte("Updated service check successfully"))
-	return
 }
 
 func initAction(w http.ResponseWriter, r *http.Request) {
@@ -247,11 +245,13 @@ func main() {
 	}
 	mw := io.MultiWriter(os.Stdout, logFile)
 
-	logger := log.New(mw, "Logger bruh: ", log.Ldate|log.Lshortfile)
+	logger := log.New(mw, "Logger middleware: ", log.Ldate|log.Lshortfile)
+	// logger, _ := zap.NewProduction()
+	// defer logger.Sync() // flushes buffer, if any
+	// sugar := logger.Sugar()
 	logMdlw := LoggingMiddleware(logger)
 
 	db, err := sql.Open("postgres", "postgres://postgres:paswd@localhost:5432/status_page?sslmode=disable")
-	//postgres://{user}:{password}@{hostname}:{port}/{database-name}?sslmode=disable
 	if err != nil {
 		logger.Fatal(err)
 	}
@@ -263,10 +263,11 @@ func main() {
 	router.HandleFunc("/", initAction).Methods("GET")
 	//router.Handle("/board", ErrorHandler(getServiceBoard)).Methods("GET")
 	//router.Handle("/board", ErrorHandler(envHolder.getServiceBoard)).Methods("GET")
-	router.HandleFunc("/check", updateService).Methods("PATCH")
+	router.HandleFunc("/update", updateService).Methods("PATCH")
 	router.Handle("/services/{service}", ErrorHandler(envHolder.processServiceEndpoint)).Methods("GET", "PUT", "DELETE")
-	router.Handle("/services", ErrorHandler(envHolder.processServices)).Methods("GET", "POST")
-	router.Handle("/dependencies", ErrorHandler(envHolder.processServices)).Methods("GET", "POST", "DELETE")
+	router.Handle("/services", ErrorHandler(envHolder.createService)).Methods("POST")
+	router.Handle("/services", ErrorHandler(envHolder.getServices)).Methods("GET")
+	// router.Handle("/dependencies", ErrorHandler(envHolder.processServices)).Methods("GET", "POST", "DELETE")
 	finalMux := logMdlw(router)
 	http.ListenAndServe(":9091", finalMux)
 }
