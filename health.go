@@ -37,7 +37,7 @@ func (check *HealthCheck) SetStatus(status int) error {
 			return nil
 		}
 	}
-	err := fmt.Errorf("Status %v is wrong, possible values are", possibleValues)
+	err := fmt.Errorf("status %v is wrong, possible values are", possibleValues)
 	return err
 }
 

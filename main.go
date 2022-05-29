@@ -61,13 +61,6 @@ var services = []Service{
 	},
 }
 
-func setError(w http.ResponseWriter, err string, statuscode int) {
-	resp := []byte(fmt.Sprintf(`{"error": "%v"}`, err))
-	w.Header().Set("Content-Type", "application/problem+json")
-	w.WriteHeader(statuscode)
-	w.Write(resp)
-}
-
 func (api env) createService(w http.ResponseWriter, r *http.Request) error {
 	var newService model.Service
 	err := json.NewDecoder(r.Body).Decode(&newService)
